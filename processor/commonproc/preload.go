@@ -44,10 +44,11 @@ const maxNumPreloads = 20
 type extractPreloadHeaders struct{}
 
 func (*extractPreloadHeaders) Process(resp *exchange.Response) error {
-	values, ok := resp.Header[headerKey]
-	if !ok {
-		return nil
-	}
+	values := []string{`<https://signed-exchange-testing.dev/sxgs/image.jpg>;rel=preload;as=image`}
+	//values, ok := resp.Header[headerKey]
+	//if !ok {
+	//	return nil
+	//}
 	resp.Header.Del(headerKey)
 
 	numPreloads := 0
