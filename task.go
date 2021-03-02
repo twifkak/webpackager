@@ -24,6 +24,7 @@ import (
 
 	"github.com/WICG/webpackage/go/signedexchange"
 	"github.com/google/webpackager/exchange"
+	"github.com/google/webpackager/fetch"
 	"github.com/google/webpackager/resource"
 	multierror "github.com/hashicorp/go-multierror"
 	"golang.org/x/xerrors"
@@ -68,7 +69,7 @@ func (runner *packagerTaskRunner) err() error {
 	return runner.errs.ErrorOrNil()
 }
 
-func (runner *packagerTaskRunner) run(parent *packagerTask, req *http.Request, r *resource.Resource) {
+func (runner *packagerTaskRunner) run(parent *packagerTask, req *http.Request, r *resource.Resource, fc fetch.FetchClient) {
 	url := r.RequestURL.String()
 	var err error
 
@@ -77,7 +78,11 @@ func (runner *packagerTaskRunner) run(parent *packagerTask, req *http.Request, r
 	} else {
 		log.Printf("processing %v ...", url)
 		runner.active[url] = true
-		err = (&packagerTask{runner, parent, req, r}).run()
+		task := &packagerTask{runner, parent, req, r}
+		if fc != nil {
+			task.FetchClient = fc
+		}
+		err = task.run()
 		delete(runner.active, url)
 	}
 
@@ -189,7 +194,7 @@ func (task *packagerTask) createExchange(rawResp *http.Response) (*signedexchang
 			if err != nil {
 				return nil, err
 			}
-			task.packagerTaskRunner.run(task, req, r)
+			task.packagerTaskRunner.run(task, req, r, fetch.WithoutSelector(task.FetchClient))
 		}
 	}
 

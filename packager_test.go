@@ -31,6 +31,7 @@ import (
 	"github.com/google/webpackager/processor/complexproc"
 	"github.com/google/webpackager/processor/htmlproc"
 	"github.com/google/webpackager/processor/htmlproc/htmltask"
+	"github.com/google/webpackager/urlmatcher"
 )
 
 var (
@@ -105,17 +106,22 @@ func TestCrossDomain(t *testing.T) {
 	defer server.Close()
 
 	pkg := webpackager.NewPackager(makeConfig(server))
+	pkg.FetchClient = fetch.WithSelector(pkg.FetchClient, urlmatcher.HasHostname("example.org"))
 	if err := pkg.Run(urlutil.MustParse("https://example.org/hello.html"), date); err != nil {
 		t.Fatalf("pkg.Run() = error(%q), want success", err)
 	}
 
-	// style.css is on a cross origin and not fetched: DefaultProcessor
-	// includes RequireSameOrigin.
+	// style.css is cross-origin and fetched: DefaultProcessor does not
+	// include RequireSameOrigin.
 	verifyRequests(t, pkg, []string{
 		"https://example.org/hello.html",
+		"https://example.com/style.css",
 	})
-	// An exchange is generated without preloading.
-	verifyExchange(t, pkg, "https://example.org/hello.html", date, "")
+	// An exchange is generated with preloading.
+	verifyExchange(t, pkg, "https://example.org/hello.html", date,
+		`<https://example.com/style.css>;rel="allowed-alt-sxg";`+
+			`header-integrity="sha256-+Xd20Pyxhd3oSvNo2ucj9gdj7ZkHavIaDGkucYF76J8=",`+
+		`<https://example.com/style.css>;rel="preload";as="style"`)
 }
 
 func TestDupResource(t *testing.T) {

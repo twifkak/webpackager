@@ -67,6 +67,6 @@ func (pkg *Packager) RunForRequest(req *http.Request, sxgDate time.Time) error {
 	if err != nil {
 		return xerrors.Errorf("packaging: %w", err)
 	}
-	runner.run(nil, req, resource.NewResource(req.URL))
+	runner.run(nil, req, resource.NewResource(req.URL), nil)
 	return runner.err()
 }

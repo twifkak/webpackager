@@ -305,8 +305,13 @@
   #DNSProvider = '' 
 
 # Specify the range of URLs webpkgserver can fetch the contents from and
-# produce the signed exchanges of. You can specify as many [[Sign]] configs
-# as you want, but must specify at least one.
+# produce the signed exchanges of. You can specify as many [[Sign]] configs as
+# you want, but must specify at least one.
+#
+# This specification does not limit which Link: rel=preload URLs webpkgserver
+# will fetch and attach allowed-alt-sxg and header-integrity to. However, those
+# URLs must respond with SXG. If this webpkgserver also handles requests for
+# those subresource URLs, then this specification applies.
 [[Sign]]
   # The scheme must be https, "user:pass@" is disallowed, the fragment must
   # be empty. There is no way to configure these.
