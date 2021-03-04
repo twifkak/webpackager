@@ -17,6 +17,8 @@ package webpackager
 import (
 	"errors"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -69,7 +71,7 @@ func (runner *packagerTaskRunner) err() error {
 	return runner.errs.ErrorOrNil()
 }
 
-func (runner *packagerTaskRunner) run(parent *packagerTask, req *http.Request, r *resource.Resource, fc fetch.FetchClient) {
+func (runner *packagerTaskRunner) run(parent *packagerTask, req *http.Request, r *resource.Resource) error {
 	url := r.RequestURL.String()
 	var err error
 
@@ -79,18 +81,19 @@ func (runner *packagerTaskRunner) run(parent *packagerTask, req *http.Request, r
 		log.Printf("processing %v ...", url)
 		runner.active[url] = true
 		task := &packagerTask{runner, parent, req, r}
-		if fc != nil {
-			task.FetchClient = fc
-		}
 		err = task.run()
 		delete(runner.active, url)
 	}
 
 	if err != nil {
-		err = WrapError(err, r.RequestURL)
+		err := WrapError(err, r.RequestURL)
 		runner.errs = multierror.Append(runner.errs, err)
+		// TODO(twifkak): Figure out the right way to suppress this
+		// error if it's a URL mismatch but successfully handled by
+		// fetchExternalSXG.
 		log.Print(err)
 	}
+	return err
 }
 
 type packagerTask struct {
@@ -194,7 +197,12 @@ func (task *packagerTask) createExchange(rawResp *http.Response) (*signedexchang
 			if err != nil {
 				return nil, err
 			}
-			task.packagerTaskRunner.run(task, req, r, fetch.WithoutSelector(task.FetchClient))
+			if err := task.packagerTaskRunner.run(task, req, r); err == fetch.ErrURLMismatch {
+				// The subresource URL does not match fetch
+				// selector config, so packager will not sign
+				// it. Instead, fetch and check if already SXG.
+				task.fetchExternalSXG(req, r)
+                        }
 		}
 	}
 
@@ -207,4 +215,40 @@ func (task *packagerTask) createExchange(rawResp *http.Response) (*signedexchang
 	}
 
 	return sxg, nil
+}
+
+// TODO(twifkak): Test all this.
+// fetchExternalSXG fetches a URL outside the purview of task's config, and if
+// it is a SXG, populates r.Exchange and r.Integrity, and stores the result in
+// the ResourceCache. It mutates req. It may fail.
+func (task *packagerTask) fetchExternalSXG(req *http.Request, r *resource.Resource) {
+	log.Printf("oh yeah it's a mismatch")
+	// TODO(twifkak): Consider a more lifelike Accept header:
+	req.Header.Add("Accept", "application/signed-exchange;v=b3")
+	if resp, err := fetch.DefaultFetchClient.Do(req); err == nil {
+		log.Printf("oh yeah i fetched")
+		// https://golang.org/pkg/net/http/#Client.Do states the need
+		// to both read to EOF and close.
+		defer resp.Body.Close()
+		if ct := resp.Header.Get("Content-Type"); ct != "application/signed-exchange;v=b3" {
+			// TODO(twifkak): Use http.NewRequestWithContext so we
+			// can cancel the request.
+			io.Copy(ioutil.Discard, resp.Body)
+			// TODO(twifkak): Better error logging.
+			log.Printf("content-type was not SXG, but %q", ct)
+			return
+		}
+		log.Printf("oh yeah good ctype")
+		// TODO(twifkak): Re-implement so only the SXG prologue is read.
+		if e, err := signedexchange.ReadExchange(resp.Body); err == nil {
+			log.Printf("oh yeah read that sxg")
+			r.SetExchange(e)
+			// TODO(twifkak): How does this deal with expiration?
+			task.ResourceCache.Store(r)
+		} else {
+			log.Printf("parsing sxg: %v", err)
+		}
+	} else {
+		log.Printf("fetching preload: %v", err)
+	}
 }

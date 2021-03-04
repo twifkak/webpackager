@@ -32,14 +32,6 @@ func WithSelector(client FetchClient, selector urlmatcher.Matcher) FetchClient {
 	return &withSelector{client, selector}
 }
 
-// WithoutSelector returns the unwrapped client without a URL selector.
-func WithoutSelector(client FetchClient) FetchClient {
-	switch c := client.(type) {
-	case *withSelector: return c.client
-	default: return c
-	}
-}
-
 type withSelector struct {
 	client   FetchClient
 	selector urlmatcher.Matcher
